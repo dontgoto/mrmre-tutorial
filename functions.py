@@ -18,6 +18,7 @@ background = [h5.File(file, 'r') for file in sorted(glob.glob(path+'L3*12550*new
 signal = [h5.File(file, 'r') for file in sorted(glob.glob(path+'L3*14550*newnomissing'))]
 colblacklist = ['Run', 'SubEventStream', 'SubEvent', 'Event', 'exists', 'pdg_encoding','type','shape', 'x', 'y', 'z', 'location', 'azimuth']
 
+
 def generate_dataframe_from_hdf5(h5Array, signalLength, backgroundLength, blacklist=None, colblacklist=None):
     """Takes an array with h5Files as elements and appends them to create a pandas dataframe
     h5Array should be partitioned into signal and background, with signals coming first"""
@@ -70,6 +71,53 @@ def attribute_vote(ensembleSelection, solutionCount):
             attributes[attr] += i
     sortedAttributes = {key : attributes[key] for key in sorted(attributes, key=attributes.get, reverse=True)}
     return sortedAttributes
+
+
+def selectWithmRMRe(mrmrData, labelIndex, featureCount=50, solutionCount=1):
+    """labelIndex : the index number of the label counting from 1
+
+    Parameters
+    ----------
+
+    featureCount : int
+        the maximum number of features to select
+    solutionCount : int
+        the number of mRMRe runs to do in an ensemble
+
+    Returns an array of indices and their weights, if solutionCount>1 a majority decision is reached
+    """
+
+    selectionEnsemble = mr.mRMR_ensemble(data = mrmrData,
+                                     target_indices = labelIndex,
+                                     feature_count = featureCount,
+                                     solution_count = solutionCount )
+    ensembleWeights = [mr.featureNames(selectionEnsemble)[i-1]
+                   for i in list(mr.solutions(selectionEnsemble)[0])]
+
+    if solutionCount > 1:
+        return np.array_split(ensembleWeights, solutionCount)
+    else:
+        return ensembleWeights
+
+
+def jaccard_from_mrmre(weights):
+    '''`weights` is a list containing lists with the weights of the mrmr selections, returns the means and stds of the calculated jaccard indices.'''
+    k = len(weights)
+    norm = scipy.special.binom(k,2)
+    jaccard = []
+    for x in (np.array(list(range(len(weights[0]))))+1):
+        jaccardx = []
+        for i,weight in enumerate(weights):
+           jaccardx.append([abs(len(np.intersect1d(weight[:x], otherWeight[:x]))/len(
+                np.union1d(weight[:x], otherWeight[:x])))
+                            for otherWeight in weights[i+1:] ])
+
+        jaccard.append(jaccardx)
+    jaccard = [np.concatenate(jacc) for jacc in jaccard]
+    indexMean = [np.sum(jacc)/norm for jacc in jaccard]
+    indexStd = [np.std(jacc) for jacc in jaccard]
+
+    return indexMean, indexStd
 
 ### short example
 
